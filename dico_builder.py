@@ -105,7 +105,7 @@ def get_candidates(emb1, emb2, params):
     ], 1)
 
     # sanity check
-    assert all_scores.size() == all_pairs.size() == (n_src, 2)
+    assert all_scores.size() == all_pairs.size() == (n_src, 2),(all_scores.size(), all_pairs.size(), n_src)
 
     # sort pairs by score confidence
     diff = all_scores[:, 0] - all_scores[:, 1]

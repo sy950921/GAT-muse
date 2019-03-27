@@ -114,6 +114,7 @@ class SpGraphAttentionLayer(nn.Module):
         # edge_e: E
 
         e_rowsum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones(size=(N, 1)).cuda())
+        # e_rowsum = self.special_spmm(edge, edge_e, torch.Size([N, N]), torch.ones(size=(N, 1)))
         # e_rowsum: N x 1
 
         edge_e = self.dropout(edge_e)
@@ -122,9 +123,11 @@ class SpGraphAttentionLayer(nn.Module):
         h_prime = self.special_spmm(edge, edge_e, torch.Size([N, N]), h)
         assert not torch.isnan(h_prime).any()
         # h_prime: N x out
+        del edge, edge_e, h
 
         h_prime = h_prime.div(e_rowsum)
         # h_prime: N x out
+        del e_rowsum
         assert not torch.isnan(h_prime).any()
 
         if self.concat:

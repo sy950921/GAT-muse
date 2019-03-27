@@ -7,8 +7,12 @@ from utils import load_src_data, load_tgt_data, normalize_embeddings
 
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 import torch.nn.functional as F
 from layers import GraphAttentionLayer, SpGraphAttentionLayer
+from function import ReverseLayerF
+from utils import clip_parameters
+from utils import get_optimizer
 
 
 class GAT(nn.Module):
@@ -56,7 +60,7 @@ class SpGAT(nn.Module):
         self.layer_norm = LayerNorm(nclass)
         self.emb_norm = EmbedNorm()
 
-    def forward(self, x, adj):
+    def forward(self, x, adj, alpha):
         x = F.dropout(x, self.dropout, training=self.training)
         # x = self.emb_norm(x)
         x = torch.cat([att(x, adj) for att in self.attentions], dim=1)
@@ -70,6 +74,8 @@ class SpGAT(nn.Module):
         # x = self.emb_norm(x)
         # x = F.log_softmax(x, dim=1)
         # return F.log_softmax(x, dim=1)
+
+        reversed_x = ReverseLayerF.apply(x, alpha)
         return x
         # return self.layer_norm(x)
         # return self.tanh(x)
@@ -129,6 +135,51 @@ class Decoder(nn.Module):
     def forward(self, x):
         assert x.dim() == 2 and x.size(1) == self.enc_dim, (x.dim(), x.size())
         return self.layers(x)
+
+
+class GATModel(nn.Module):
+
+    def __init__(self, src_encoder, tgt_encoder, src_decoder, tgt_decoder, discriminator):
+        super(GATModel, self).__init__()
+        self.src_encoder = src_encoder
+        self.tgt_encoder = tgt_encoder
+        self.src_decoder = src_decoder
+        self.tgt_decoder = tgt_decoder
+        self.discriminator = discriminator
+
+    def forward(self, src_emb, src_adj, tgt_emb, tgt_adj, dico, params):
+        # src_vocab = src_emb.weight.shape[0]
+        # tgt_vocab = tgt_emb.weight.shape[0]
+
+        src_vocab = src_emb.shape[0]
+        tgt_vocab = tgt_emb.shape[0]
+
+        src_enc = self.src_encoder(src_emb, src_adj, params.alpha)
+        tgt_enc = self.tgt_encoder(tgt_emb, tgt_adj, params.alpha)
+
+        x = torch.cat([src_enc, tgt_enc], 0)
+        y = torch.FloatTensor(src_vocab + tgt_vocab).zero_()
+        y[:src_vocab] = 1 - params.dis_smooth
+        y[src_vocab:] = params.dis_smooth
+        y = Variable(y.cuda() if params.cuda else y)
+
+        reverse_x = ReverseLayerF.apply(x, params.alpha)
+        dis_out = self.discriminator(reverse_x)
+        # dis_loss = F.binary_cross_entropy(dis_out, 1-y)
+
+        src_re_emb = self.src_decoder(src_enc)
+        tgt_re_emb = self.tgt_decoder(tgt_enc)
+        # rebuild_loss = F.mse_loss(src_emb, src_re_emb) + F.mse_loss(tgt_emb, tgt_re_emb)
+
+        A1 = src_enc[dico[:, 0]]
+        B1 = tgt_enc[dico[:, 1]]
+
+        # super_loss = F.mse_loss(A1, B1)
+        # super_loss += F.mse_loss(src_emb, src_re_emb)
+        # super_loss += F.mse_loss(tgt_emb, tgt_re_emb)
+
+        return src_enc, tgt_enc, dis_out, src_re_emb, tgt_re_emb, A1, B1
+        
 
 
 def build_model(params, with_dis):
@@ -202,7 +253,9 @@ def build_model(params, with_dis):
     if params.tgt_lang:
         params.tgt_mean = normalize_embeddings(tgt_emb.weight.data, params.normalize_embeddings)
 
-    return src_emb, tgt_emb, src_adj, tgt_adj, src_mapping, tgt_mapping, src_decoder, tgt_decoder, discriminator
+    model = GATModel(src_encoder=src_mapping, tgt_encoder=tgt_mapping, src_decoder=src_decoder, tgt_decoder=tgt_decoder, discriminator=discriminator)
+
+    return src_emb, tgt_emb, src_adj, tgt_adj, model, src_dico, tgt_dico
 
 
 class LayerNorm(nn.Module):

@@ -12,6 +12,7 @@ from utils import get_optimizer
 
 logger = getLogger()
 
+
 class Trainer(object):
 
     def __init__(self, src_emb, tgt_emb, src_adj, tgt_adj, src_mapping, tgt_mapping, src_decoder, tgt_decoder, discriminator, params):
@@ -151,6 +152,7 @@ class Trainer(object):
         # print(F.mse_loss(src_emb, re_src_emb).shape)
         # print(src_emb)
         # print(re_src_emb)
+        # loss = F.mse_loss(src_emb, re_src_emb)
         loss += F.mse_loss(src_emb, re_src_emb)
         loss += F.mse_loss(tgt_emb, re_tgt_emb)
 
@@ -190,11 +192,15 @@ class Trainer(object):
             tgt_emb_new = self.tgt_mapping(tgt_embeddings, self.tgt_adj)
             A1 = src_emb_new[self.dico[:, 0]]
             B1 = tgt_emb_new[self.dico[:, 1]]
+            # A2 = A1 / A1.norm(2, 1, keepdim=True).expand_as(A1)
+            # B2 = B1 / B1.norm(2, 1, keepdim=True).expand_as(B1)
+            A2 = A1
+            B2 = B1
 
             re_src_emb = self.src_decoder(src_emb_new)
             re_tgt_emb = self.tgt_decoder(tgt_emb_new)
 
-        loss = F.mse_loss(A1, B1)
+        loss = F.mse_loss(A2, B2)
         loss += F.mse_loss(src_embeddings, re_src_emb)
         loss += F.mse_loss(tgt_embeddings, re_tgt_emb)
         if (loss != loss).data.any():

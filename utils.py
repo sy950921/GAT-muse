@@ -59,6 +59,7 @@ def initialize_exp(params):
     logger.info('The experiment will be stored in %s' % params.exp_path)
     return logger
 
+
 def get_exp_path(params):
     """
     Create a directory to store the experiment.
@@ -133,11 +134,11 @@ def embedding_read(file_path, full_vocab, params, lang):
 
 def load_nns(nn_file, words, params):
     vectors = []
-    # print(words.word2id)
+   # print(words.word2id)
     with io.open(nn_file, 'r', encoding='utf-8', newline='\n', errors='ignore') as f:
         for i, line in enumerate(f):
             word, nns = line.rstrip().split(' ', 1)
-            # print(word)
+            #print(word)
             nns = np.fromstring(nns, sep=' ')
             if word in words.word2id:
                 nns = list(nns)
@@ -158,6 +159,8 @@ def load_src_data(src_file, src_nns, params):
     src_edges = load_nns(src_nns, words=src_words, params=params)
     src_adj = sp.coo_matrix((np.ones(src_edges.shape[0]), (src_edges[:, 0], src_edges[:, 1])), shape=(x.shape[0], x.shape[0]), dtype=np.float32)    
     src_adj = torch.FloatTensor(np.array(src_adj.todense()))
+    src_adj = normalize_adj(src_adj + torch.eye(src_adj.shape[0]))
+    # src_adj = torch.FloatTensor(src_adj)
     src_features = torch.FloatTensor(x)
     return src_words, src_adj, src_features
 
@@ -173,17 +176,26 @@ def load_tgt_data(tgt_file, tgt_nns, params):
                             shape=(z.shape[0], z.shape[0]), dtype=np.float32)
 
     tgt_adj = torch.FloatTensor(np.array(tgt_adj.todense()))
+    tgt_adj = normalize_adj(tgt_adj + torch.eye(tgt_adj.shape[0]))
+    # tgt_adj = torch.FloatTensor(tgt_adj)
     tgt_features = torch.FloatTensor(z)
     return tgt_words, tgt_adj, tgt_features
 
 
+# def normalize_adj(mx):
+#     """Row-normalize sparse matrix"""
+#     rowsum = np.array(mx.sum(1))
+#     r_inv_sqrt = np.power(rowsum, -0.5).flatten()
+#     r_inv_sqrt[np.isinf(r_inv_sqrt)] = 0.
+#     r_mat_inv_sqrt = sp.diags(r_inv_sqrt)
+#     return mx.dot(r_mat_inv_sqrt).transpose().dot(r_mat_inv_sqrt)
+
 def normalize_adj(mx):
-    """Row-normalize sparse matrix"""
-    rowsum = np.array(mx.sum(1))
-    r_inv_sqrt = np.power(rowsum, -0.5).flatten()
-    r_inv_sqrt[np.isinf(r_inv_sqrt)] = 0.
-    r_mat_inv_sqrt = sp.diags(r_inv_sqrt)
-    return mx.dot(r_mat_inv_sqrt).transpose().dot(r_mat_inv_sqrt)
+    rowsum = mx.sum(1, keepdim=False)
+    r_inv_sqrt = torch.rsqrt(rowsum)
+    r_inv_sqrt[torch.isinf(r_inv_sqrt)] = 0.
+    r_mat_inv_sqrt = torch.diag(r_inv_sqrt)
+    return mx.mm(r_mat_inv_sqrt).transpose(0, 1).mm(r_mat_inv_sqrt)
 
 
 def normalize_features(mx):
@@ -194,6 +206,7 @@ def normalize_features(mx):
     r_mat_inv = sp.diags(r_inv)
     mx = r_mat_inv.dot(mx)
     return mx
+
 
 def normalize_embeddings(emb, types, mean=None):
     """
